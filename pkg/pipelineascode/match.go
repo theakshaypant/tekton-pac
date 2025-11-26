@@ -117,6 +117,18 @@ is that what you want? make sure you use -n when generating the secret, eg: echo
 		return repo, err
 	}
 
+	// Enrich event if needed (for webhook mode where initial parsing was done without API access)
+	// At the moment, this only helps IssueCommentEvent to add all required information needed for
+	// processing the event for app installation as well as webhook integration.
+	if p.event.NeedsEnrichment {
+		p.logger.Info("Enriching event with API calls now that client is initialized")
+		enrichedEvent, err := p.vcx.EnrichEvent(ctx, p.event)
+		if err != nil {
+			return repo, fmt.Errorf("failed to enrich event: %w", err)
+		}
+		p.event = enrichedEvent
+	}
+
 	if p.event.InstallationID > 0 {
 		token, err := github.ScopeTokenToListOfRepos(ctx, p.vcx, p.pacInfo, repo, p.run, p.event, p.eventEmitter, p.logger)
 		if err != nil {

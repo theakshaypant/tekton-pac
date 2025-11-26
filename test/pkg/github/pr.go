@@ -183,6 +183,51 @@ func (g *PRTest) RunPullRequest(ctx context.Context, t *testing.T) {
 	g.SHA = sha
 }
 
+// SendIssueCommentWebhook sends an issue comment webhook for testing.
+// This is used to test webhook-based issue comment handling (e.g., /retest, /test, /cancel).
+func (g *PRTest) SendIssueCommentWebhook(ctx context.Context, t *testing.T, comment string) {
+	if !g.Webhook {
+		t.Fatalf("SendIssueCommentWebhook called but Webhook mode is not enabled")
+	}
+
+	// Get repository and PR info
+	repoinfo, _, err := g.Provider.Client().Repositories.Get(ctx, g.Options.Organization, g.Options.Repo)
+	assert.NilError(t, err)
+
+	pr, _, err := g.Provider.Client().PullRequests.Get(ctx, g.Options.Organization, g.Options.Repo, g.PRNumber)
+	assert.NilError(t, err)
+
+	// Create issue comment webhook payload
+	issueCommentPayload := &ghlib.IssueCommentEvent{
+		Action: ghlib.Ptr("created"),
+		Issue: &ghlib.Issue{
+			Number: pr.Number,
+			PullRequestLinks: &ghlib.PullRequestLinks{
+				URL:     pr.URL,
+				HTMLURL: pr.HTMLURL,
+			},
+			State: pr.State,
+			Title: pr.Title,
+			User:  pr.User,
+		},
+		Comment: &ghlib.IssueComment{
+			ID:   ghlib.Ptr[int64](12345),
+			Body: ghlib.Ptr(comment),
+			User: pr.User,
+		},
+		Repo:   repoinfo,
+		Sender: pr.User,
+	}
+
+	// Send webhook
+	elURL := fmt.Sprintf("%s/", g.Options.ControllerURL)
+	webhookSecret := os.Getenv("TEST_EL_WEBHOOK_SECRET")
+
+	g.Logger.Infof("Sending issue comment webhook with comment: %s", comment)
+	err = payload.Send(ctx, g.Cnx, elURL, webhookSecret, repoinfo.GetHTMLURL(), "", issueCommentPayload, "issue_comment")
+	assert.NilError(t, err)
+}
+
 func (g *PRTest) TearDown(ctx context.Context, t *testing.T) {
 	if os.Getenv("TEST_NOCLEANUP") == "true" {
 		g.Logger.Infof("Not cleaning up and closing PR since TEST_NOCLEANUP is set")
