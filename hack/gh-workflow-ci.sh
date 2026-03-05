@@ -171,6 +171,11 @@ get_tests() {
       printf '%s\n' "${ghe_tests[@]:${start_idx}:$((ghe_chunk_size + ghe_remainder))}"
     fi
     ;;
+  github_ghe_webhook)
+    # Only run GHE tests with dynamic webhook repository creation
+    # Include: *Webhook*, *CommentStrategyUpdate*, but exclude GithubGHEAppIncoming* and TestGithubGHEIncoming (uses GitHub App)
+    printf '%s\n' "${all_tests}" | grep -iP 'GithubGHE.*(Webhook|CommentStrategyUpdate)' | grep -vP 'GithubGHE(App)?Incoming(?!Webhook)'
+    ;;
   gitlab_bitbucket)
     printf '%s\n' "${all_tests}" | grep -iP 'Gitlab|Bitbucket' | grep -ivP 'Concurrency'
     ;;
@@ -192,7 +197,7 @@ get_tests() {
     ;;
   *)
     echo "Invalid target: ${target}"
-    echo "supported targets: github_public, github_ghe_1, github_ghe_2, github_ghe_3, gitlab_bitbucket, gitea_1, gitea_2, gitea_3, concurrency, flaky"
+    echo "supported targets: github_public, github_ghe_1, github_ghe_2, github_ghe_3, github_ghe_webhook, gitlab_bitbucket, gitea_1, gitea_2, gitea_3, concurrency, flaky"
     echo "backward compat aliases: github_1, github_2, github_second_controller, github_ghe"
     ;;
   esac
@@ -341,7 +346,7 @@ output_logs)
   ;;
 print_tests)
   set +x
-  for target in github_public github_ghe_1 github_ghe_2 github_ghe_3 gitlab_bitbucket gitea_1 gitea_2 gitea_3 concurrency flaky; do
+  for target in github_public github_ghe_1 github_ghe_2 github_ghe_3 github_ghe_webhook gitlab_bitbucket gitea_1 gitea_2 gitea_3 concurrency flaky; do
     mapfile -t tests < <(get_tests "${target}")
     echo "Tests for target: ${target} Total: ${#tests[@]}"
     printf '%s\n' "${tests[@]}"
