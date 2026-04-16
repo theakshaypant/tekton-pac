@@ -72,11 +72,23 @@ type Provider struct {
 	pacUserLogin       string // user/bot login used by PAC
 	clock              clockwork.Clock
 	graphQLClient      *graphQLClient
+	checkRunsCache     checkRunsCache
 }
 
 type skippedRun struct {
 	mutex      *sync.Mutex
 	checkRunID int64
+}
+
+type checkRunsCache struct {
+	mu      sync.Mutex
+	entries map[string]*checkRunsCacheEntry
+}
+
+type checkRunsCacheEntry struct {
+	runs    []*github.CheckRun
+	loading bool
+	done    chan struct{}
 }
 
 func New() *Provider {
@@ -87,6 +99,9 @@ func New() *Provider {
 			mutex: &sync.Mutex{},
 		},
 		clock: clockwork.NewRealClock(),
+		checkRunsCache: checkRunsCache{
+			entries: map[string]*checkRunsCacheEntry{},
+		},
 	}
 }
 
