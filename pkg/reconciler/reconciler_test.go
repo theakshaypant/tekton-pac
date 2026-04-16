@@ -71,9 +71,8 @@ func TestReconcilerReconcileKind(t *testing.T) {
 	fakeclient, mux, _, teardown := ghtesthelper.SetupGH()
 	defer teardown()
 
-	vcx := &ghprovider.Provider{
-		Token: github.Ptr("None"),
-	}
+	vcx := ghprovider.New()
+	vcx.Token = github.Ptr("None")
 
 	vcx.SetGithubClient(fakeclient)
 

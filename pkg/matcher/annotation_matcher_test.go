@@ -1623,9 +1623,8 @@ func TestMatchPipelinerunAnnotationAndRepositories(t *testing.T) {
 			ctx, _ := rtesting.SetupFakeContext(t)
 			fakeclient, mux, ghTestServerURL, teardown := ghtesthelper.SetupGH()
 			defer teardown()
-			vcx := &ghprovider.Provider{
-				Token: github.Ptr("None"),
-			}
+			vcx := ghprovider.New()
+			vcx.Token = github.Ptr("None")
 			vcx.SetGithubClient(fakeclient)
 			if tt.args.runevent.Request == nil {
 				tt.args.runevent.Request = &info.Request{Header: http.Header{}, Payload: nil}
@@ -2338,7 +2337,7 @@ func TestMatchPipelinerunByAnnotation(t *testing.T) {
 
 			eventEmitter := events.NewEventEmitter(cs.Clients.Kube, logger)
 			repo := tt.repo
-			matches, err := MatchPipelinerunByAnnotation(ctx, logger, tt.args.pruns, cs, &tt.args.runevent, &ghprovider.Provider{}, eventEmitter, repo, true)
+			matches, err := MatchPipelinerunByAnnotation(ctx, logger, tt.args.pruns, cs, &tt.args.runevent, ghprovider.New(), eventEmitter, repo, true)
 			if tt.wantErrNoFailedPipelineToRetest {
 				assert.Assert(t, err != nil, "expected ErrNoFailedPipelineToRetest")
 				assert.Assert(t, errors.Is(err, NoFailedPipelineToRetestError("/pac ")), "expected ErrNoFailedPipelineToRetest, got: %v", err)
@@ -3284,7 +3283,7 @@ func TestFilterSuccessfulTemplates(t *testing.T) {
 				return
 			}
 
-			filtered := filterSuccessfulTemplates(ctx, logger, cs, event, repo, &ghprovider.Provider{}, tt.matchedPRs)
+			filtered := filterSuccessfulTemplates(ctx, logger, cs, event, repo, ghprovider.New(), tt.matchedPRs)
 
 			// Check that the correct number of templates remain
 			assert.Equal(t, len(tt.expectedNames), len(filtered),

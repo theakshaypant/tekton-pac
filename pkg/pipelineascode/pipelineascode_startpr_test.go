@@ -207,11 +207,10 @@ func setupStartPRTest(t *testing.T) (*params.Run, *info.Event, *zap.SugaredLogge
 
 // setupProviderForTest creates and configures a GitHub provider for testing.
 func setupProviderForTest(cs *params.Run, logger *zap.SugaredLogger, fakeclient *github.Client, pacInfo *info.PacOpts) *ghprovider.Provider {
-	vcx := &ghprovider.Provider{
-		Run:    cs,
-		Token:  github.Ptr("test-token"),
-		Logger: logger,
-	}
+	vcx := ghprovider.New()
+	vcx.Run = cs
+	vcx.Token = github.Ptr("test-token")
+	vcx.Logger = logger
 	vcx.SetGithubClient(fakeclient)
 	vcx.SetPacInfo(pacInfo)
 	return vcx
