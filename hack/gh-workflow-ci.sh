@@ -262,11 +262,13 @@ collect_logs() {
 
   for type in pipelineruns repositories.pipelinesascode.tekton.dev; do
     kubectl get "${type}" -A -o jsonpath='{range .items[*]}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' | while read -r ns name; do
+      [[ -z "${ns}" || -z "${name}" ]] && continue
       echo "---"
       kubectl get "${type}" "${name}" -n "${ns}" -o yaml
     done > "/tmp/logs/pac-${type%%.*}.yaml"
   done
   kubectl get configmap -n pipelines-as-code -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | while read -r name; do
+    [[ -z "${name}" ]] && continue
     echo "---"
     kubectl get configmap "${name}" -n pipelines-as-code -o yaml
   done > /tmp/logs/pac-configmap.yaml
