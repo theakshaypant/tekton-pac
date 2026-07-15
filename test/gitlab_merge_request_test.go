@@ -902,6 +902,113 @@ func TestGitlabMergeRequestCommentStrategyUpdateCELErrorReplacement(t *testing.T
 		celErrorNoteID, updatedNoteID)
 }
 
+// TestGitlabGetTaskURI verifies that remote tasks hosted in a deeply nested
+// private GitLab subgroup are fetched using the provider's authenticated
+// GetTaskURI path (via the /-/raw/ URL format). This reproduces the scenario
+// from issue #2790 where deeply nested subgroup paths caused HTTP 403 errors.
+func TestGitlabGetTaskURI(t *testing.T) {
+	ctx := context.Background()
+	runcnx, opts, glprovider, err := tgitlab.Setup(ctx)
+	assert.NilError(t, err)
+
+	groupPath := os.Getenv("TEST_GITLAB_GROUP")
+	hookURL := os.Getenv("TEST_GITLAB_SMEEURL")
+	webhookSecret := os.Getenv("TEST_EL_WEBHOOK_SECRET")
+
+	// Create two levels of nested subgroups to reproduce the deeply nested
+	// path scenario: TEST_GITLAB_GROUP / sub1-xxx / sub2-xxx / project
+	parentGroup, _, err := glprovider.Client().Groups.GetGroup(groupPath, nil)
+	assert.NilError(t, err)
+
+	sub1Name := names.SimpleNameGenerator.RestrictLengthWithRandomSuffix("sub1")
+	sub1, _, err := glprovider.Client().Groups.CreateGroup(&clientGitlab.CreateGroupOptions{
+		Name:       clientGitlab.Ptr(sub1Name),
+		Path:       clientGitlab.Ptr(sub1Name),
+		ParentID:   &parentGroup.ID,
+		Visibility: clientGitlab.Ptr(clientGitlab.PrivateVisibility),
+	})
+	assert.NilError(t, err)
+	runcnx.Clients.Log.Infof("Created subgroup %s (ID %d)", sub1.FullPath, sub1.ID)
+
+	sub2Name := names.SimpleNameGenerator.RestrictLengthWithRandomSuffix("sub2")
+	sub2, _, err := glprovider.Client().Groups.CreateGroup(&clientGitlab.CreateGroupOptions{
+		Name:       clientGitlab.Ptr(sub2Name),
+		Path:       clientGitlab.Ptr(sub2Name),
+		ParentID:   &sub1.ID,
+		Visibility: clientGitlab.Ptr(clientGitlab.PrivateVisibility),
+	})
+	assert.NilError(t, err)
+	runcnx.Clients.Log.Infof("Created subgroup %s (ID %d)", sub2.FullPath, sub2.ID)
+
+	defer func() {
+		if os.Getenv("TEST_NOCLEANUP") != "true" {
+			runcnx.Clients.Log.Infof("Deleting subgroup tree rooted at %s (ID %d)", sub1.FullPath, sub1.ID)
+			_, _ = glprovider.Client().Groups.DeleteGroup(sub1.ID, nil)
+		}
+	}()
+
+	remoteProjectName := names.SimpleNameGenerator.RestrictLengthWithRandomSuffix("remote-task")
+	remoteProject, err := tgitlab.CreateGitLabProject(
+		glprovider.Client(), sub2.FullPath, remoteProjectName,
+		hookURL, webhookSecret, true, runcnx.Clients.Log,
+	)
+	assert.NilError(t, err)
+	runcnx.Clients.Log.Infof("Created project %s (deeply nested path)", remoteProject.PathWithNamespace)
+
+	// Push the remote task file into the deeply nested project
+	remoteCloneURL, err := scm.MakeGitCloneURL(remoteProject.WebURL, opts.UserName, opts.Password)
+	assert.NilError(t, err)
+
+	taskContent, err := os.ReadFile("testdata/remote_task_gitlab.yaml")
+	assert.NilError(t, err)
+
+	scm.PushFilesToRefGit(t, &scm.Opts{
+		GitURL:        remoteCloneURL,
+		Log:           runcnx.Clients.Log,
+		WebURL:        remoteProject.WebURL,
+		TargetRefName: "main",
+		BaseRefName:   "main",
+	}, map[string]string{
+		"remote-task.yaml": string(taskContent),
+	})
+
+	remoteTaskURL := fmt.Sprintf("%s/-/raw/%s/remote-task.yaml",
+		remoteProject.WebURL, "main")
+	runcnx.Clients.Log.Infof("Remote task URL (deeply nested): %s", remoteTaskURL)
+
+	topts := &tgitlab.TestOpts{
+		TargetEvent: triggertype.PullRequest.String(),
+		YAMLFiles: map[string]string{
+			".tekton/pr.yaml": "testdata/pipelinerun_remote_task_on_gitlab.yaml",
+		},
+		ExtraArgs: map[string]string{
+			"RemoteTaskURL": remoteTaskURL,
+		},
+		ParamsRun:  runcnx,
+		Opts:       opts,
+		GLProvider: glprovider,
+	}
+	ctx, cleanup := tgitlab.TestMR(t, topts)
+	defer cleanup()
+
+	commitTitle := "Committing files from test on " + topts.TargetRefName
+	sopt := twait.SuccessOpt{
+		Title:           commitTitle,
+		OnEvent:         "Merge Request",
+		TargetNS:        topts.TargetNS,
+		NumberofPRMatch: 1,
+		SHA:             topts.SHA,
+	}
+	twait.Succeeded(ctx, t, topts.ParamsRun, topts.Opts, sopt)
+
+	err = twait.RegexpMatchingInPodLog(ctx, runcnx, topts.TargetNS,
+		"tekton.dev/pipelineTask=task-from-remote",
+		"step-echo",
+		*regexp.MustCompile("Hello from deeply nested GitLab subgroup"),
+		"", 2, nil)
+	assert.NilError(t, err, "remote task did not produce expected log output")
+}
+
 // Local Variables:
 // compile-command: "go test -tags=e2e -v -run ^TestGitlabMergeRequest$"
 // End:

@@ -1,0 +1,16 @@
+---
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: "pipelinerun-remote-task-on-gitlab"
+  annotations:
+    pipelinesascode.tekton.dev/target-namespace: "\\ .TargetNamespace //"
+    pipelinesascode.tekton.dev/on-target-branch: "[\\ .TargetBranch //]"
+    pipelinesascode.tekton.dev/on-event: "[\\ .TargetEvent //]"
+    pipelinesascode.tekton.dev/task: "[\\ .RemoteTaskURL //]"
+spec:
+  pipelineSpec:
+    tasks:
+      - name: task-from-remote
+        taskRef:
+          name: remote-task-gitlab

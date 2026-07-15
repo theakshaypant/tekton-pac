@@ -90,28 +90,17 @@ func (v *Provider) GetTaskURI(_ context.Context, event *info.Event, uri string) 
 		}
 	}
 
-	// Construct the project slug for the remote repository
 	projectSlug := extracted.GroupOrUser + "/" + extracted.Repository
 
-	// Get the project ID for the remote repository
-	project, _, err := client.Projects.GetProject(projectSlug, &gl.GetProjectOptions{})
-	if err != nil {
-		if errors.Is(err, gl.ErrNotFound) {
-			return false, "", nil
-		}
-		return false, "", fmt.Errorf("failed to get project ID for %s: %w", projectSlug, err)
-	}
-
-	// Fetch the file from the remote repository
 	opt := &gl.GetRawFileOptions{
 		Ref: gl.Ptr(extracted.Revision),
 	}
-	file, _, err := client.RepositoryFiles.GetRawFile(project.ID, extracted.FilePath, opt)
+	file, _, err := client.RepositoryFiles.GetRawFile(projectSlug, extracted.FilePath, opt)
 	if err != nil {
 		if errors.Is(err, gl.ErrNotFound) {
 			return false, "", nil
 		}
-		return false, "", fmt.Errorf("failed to get file %s from remote repository: %w", extracted.FilePath, err)
+		return false, "", fmt.Errorf("failed to get file %s from project %s: %w", extracted.FilePath, projectSlug, err)
 	}
 	return true, string(file), nil
 }

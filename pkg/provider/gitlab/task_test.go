@@ -80,17 +80,12 @@ func TestGetTaskURI(t *testing.T) {
 		{
 			name: "success",
 			setup: func(t *testing.T) (*httptest.Server, string, string) {
-				projectID := 12345
 				projectSlug := "chmouel/dazgo"
 				revision := "main"
 				filePath := "task.yaml"
 
 				mux := http.NewServeMux()
-				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%s", gl.PathEscape(projectSlug)), func(w http.ResponseWriter, _ *http.Request) {
-					fmt.Fprintf(w, `{"id": %d, "path_with_namespace": "%s"}`, projectID, projectSlug)
-				})
-
-				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%d/repository/files/%s/raw", projectID, gl.PathEscape(filePath)), func(w http.ResponseWriter, r *http.Request) {
+				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%s/repository/files/%s/raw", gl.PathEscape(projectSlug), gl.PathEscape(filePath)), func(w http.ResponseWriter, r *http.Request) {
 					assert.Equal(t, "token", r.Header.Get("Private-Token"), "Expected Private-Token header to be 'token'")
 					assert.Equal(t, revision, r.URL.Query().Get("ref"), "Expected 'ref' query parameter to be 'main'")
 					fmt.Fprint(w, expectedContent)
@@ -108,15 +103,10 @@ func TestGetTaskURI(t *testing.T) {
 			name: "file not found (404)",
 			setup: func(_ *testing.T) (*httptest.Server, string, string) {
 				mux := http.NewServeMux()
-				projectID := 12345
 				projectSlug := "chmouel/dazgo"
 				filePath := "nonexistent.yaml"
 
-				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%s", gl.PathEscape(projectSlug)), func(w http.ResponseWriter, _ *http.Request) {
-					fmt.Fprintf(w, `{"id": %d, "path_with_namespace": "%s"}`, projectID, projectSlug)
-				})
-
-				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%d/repository/files/%s/raw", projectID, gl.PathEscape(filePath)), func(w http.ResponseWriter, _ *http.Request) {
+				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%s/repository/files/%s/raw", gl.PathEscape(projectSlug), gl.PathEscape(filePath)), func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNotFound)
 					fmt.Fprint(w, `{"message": "404 File Not Found"}`)
 				})
@@ -133,14 +123,15 @@ func TestGetTaskURI(t *testing.T) {
 			setup: func(_ *testing.T) (*httptest.Server, string, string) {
 				mux := http.NewServeMux()
 				projectSlug := "nonexistent/project"
+				filePath := "task.yaml"
 
-				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%s", gl.PathEscape(projectSlug)), func(w http.ResponseWriter, _ *http.Request) {
+				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%s/repository/files/%s/raw", gl.PathEscape(projectSlug), gl.PathEscape(filePath)), func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusNotFound)
-					fmt.Fprint(w, `{"message": "404 Project Not Found"}`)
+					fmt.Fprint(w, `{"message": "404 Not Found"}`)
 				})
 
 				server := httptest.NewServer(mux)
-				remotePipelineURL := fmt.Sprintf("%s/%s/-/raw/main/task.yaml", server.URL, projectSlug)
+				remotePipelineURL := fmt.Sprintf("%s/%s/-/raw/main/%s", server.URL, projectSlug, filePath)
 				return server, server.URL, remotePipelineURL
 			},
 			wantFound: false,
@@ -164,37 +155,35 @@ func TestGetTaskURI(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name: "API error on GetProject",
-			setup: func(_ *testing.T) (*httptest.Server, string, string) {
-				mux := http.NewServeMux()
-				projectSlug := "chmouel/dazgo"
+			name: "deeply nested subgroups",
+			setup: func(t *testing.T) (*httptest.Server, string, string) {
+				projectSlug := "mycompany/infrastructure/shared-cicd/tekton"
+				revision := "feature-branch"
+				filePath := "pipelines/frontend/react-pipeline.yaml"
 
-				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%s", gl.PathEscape(projectSlug)), func(w http.ResponseWriter, _ *http.Request) {
-					w.WriteHeader(http.StatusInternalServerError)
-					fmt.Fprint(w, `{"message": "Internal Server Error"}`)
+				mux := http.NewServeMux()
+				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%s/repository/files/%s/raw", gl.PathEscape(projectSlug), gl.PathEscape(filePath)), func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, "token", r.Header.Get("Private-Token"))
+					assert.Equal(t, revision, r.URL.Query().Get("ref"))
+					fmt.Fprint(w, expectedContent)
 				})
 
 				server := httptest.NewServer(mux)
-				remotePipelineURL := fmt.Sprintf("%s/%s/-/raw/main/task.yaml", server.URL, projectSlug)
+				remotePipelineURL := fmt.Sprintf("%s/%s/-/raw/%s/%s", server.URL, projectSlug, revision, filePath)
 				return server, server.URL, remotePipelineURL
 			},
-			wantFound:       false,
-			wantErr:         true,
-			wantErrContains: "failed to get project ID",
+			wantFound:   true,
+			wantErr:     false,
+			wantContent: expectedContent,
 		},
 		{
 			name: "API error on GetRawFile",
 			setup: func(_ *testing.T) (*httptest.Server, string, string) {
 				mux := http.NewServeMux()
-				projectID := 12345
 				projectSlug := "chmouel/dazgo"
 				filePath := "task.yaml"
 
-				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%s", gl.PathEscape(projectSlug)), func(w http.ResponseWriter, _ *http.Request) {
-					fmt.Fprintf(w, `{"id": %d, "path_with_namespace": "%s"}`, projectID, projectSlug)
-				})
-
-				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%d/repository/files/%s/raw", projectID, gl.PathEscape(filePath)), func(w http.ResponseWriter, _ *http.Request) {
+				mux.HandleFunc(fmt.Sprintf("/api/v4/projects/%s/repository/files/%s/raw", gl.PathEscape(projectSlug), gl.PathEscape(filePath)), func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusInternalServerError)
 					fmt.Fprint(w, `{"message": "Internal Server Error"}`)
 				})
